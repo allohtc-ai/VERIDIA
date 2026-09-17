@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
-import { Shield, AlertTriangle, CheckCircle2, Activity, Plus, Globe, Server, RefreshCw } from "lucide-react";
+import { Shield, AlertTriangle, CheckCircle2, Activity, Plus, Globe, Server, RefreshCw, Play, ShieldAlert } from "lucide-react";
 
 interface Asset {
   id: string;
@@ -23,12 +23,15 @@ interface Finding {
   risk_score: number;
   status: string;
   cwe?: string;
+  endpoint?: string;
+  remediation?: string;
 }
 
 export default function Dashboard() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scanningId, setScanningId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newAsset, setNewAsset] = useState({ name: "", url: "", type: "web", criticality: "medium" });
   const [adding, setAdding] = useState(false);
@@ -76,15 +79,34 @@ export default function Dashboard() {
     }
   }
 
+  async function handleLaunchScan(assetId: string, assetName: string) {
+    setScanningId(assetId);
+    try {
+      const res = await fetch("/api/scans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assetId, assetName }),
+      });
+      if (res.ok) {
+        await loadData();
+      } else {
+        alert("Erreur lors du lancement du scan.");
+      }
+    } finally {
+      setScanningId(null);
+    }
+  }
+
   const criticalCount = findings.filter((f) => f.severity === "critical").length;
   const highCount = findings.filter((f) => f.severity === "high").length;
+  const mediumCount = findings.filter((f) => f.severity === "medium").length;
 
   return (
     <>
       <Navbar />
       <main className="min-h-screen bg-[#0a0e1a] text-white pt-24 pb-20 px-4">
         <div className="max-w-6xl mx-auto">
-          {/* Header avec le bouton Ajouter */}
+          {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-white/[0.02] p-6 rounded-2xl border border-white/5">
             <div>
               <h1 className="text-3xl font-bold tracking-tight">Tableau de bord de Sécurité</h1>
@@ -128,14 +150,12 @@ export default function Dashboard() {
               <div className="text-3xl font-bold">{criticalCount}</div>
             </div>
 
-            <div className="bg-white/5 border border-emerald-500/20 rounded-xl p-5">
+            <div className="bg-white/5 border border-orange-500/20 rounded-xl p-5">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Actifs sains</span>
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                <span className="text-gray-400 text-sm">Failles Hautes</span>
+                <ShieldAlert className="w-5 h-5 text-orange-400" />
               </div>
-              <div className="text-3xl font-bold">
-                {assets.filter((a) => a.status === "clean" || a.status === "pending" || a.status === "vulnerable").length}
-              </div>
+              <div className="text-3xl font-bold">{highCount}</div>
             </div>
 
             <div className="bg-white/5 border border-purple-500/20 rounded-xl p-5">
@@ -144,20 +164,20 @@ export default function Dashboard() {
                 <Activity className="w-5 h-5 text-purple-400" />
               </div>
               <div className="text-3xl font-bold">
-                {assets.length === 0 ? "100%" : `${Math.max(10, 100 - criticalCount * 25 - highCount * 10)}%`}
+                {findings.length === 0 ? "100%" : `${Math.max(15, 100 - criticalCount * 25 - highCount * 10 - mediumCount * 5)}%`}
               </div>
             </div>
           </div>
 
-          {/* Section 1 : Tableau des Actifs */}
+          {/* Section 1 : Tableau des Actifs avec Bouton Scanner */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Globe className="w-5 h-5 text-cyan-400" />
-              Vos Actifs & Périmètre
+              Vos Actifs & Périmètre d&apos;Évaluation
             </h2>
 
             {assets.length === 0 ? (
-              <p className="text-gray-400 text-sm py-4">Aucun actif enregistré. Cliquez sur &quot;Ajouter un actif&quot;.</p>
+              <p className="text-gray-400 text-sm py-4">Aucun actif enregistré.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -165,9 +185,9 @@ export default function Dashboard() {
                     <tr className="border-b border-white/10 text-gray-400">
                       <th className="pb-3">Nom</th>
                       <th className="pb-3">URL / Cible</th>
-                      <th className="pb-3">Type</th>
                       <th className="pb-3">Criticité</th>
                       <th className="pb-3">Statut</th>
+                      <th className="pb-3 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
@@ -175,24 +195,29 @@ export default function Dashboard() {
                       <tr key={asset.id} className="hover:bg-white/[0.02]">
                         <td className="py-3 font-semibold text-white">{asset.name}</td>
                         <td className="py-3 text-cyan-400 font-mono text-xs">{asset.url}</td>
-                        <td className="py-3 text-gray-300 capitalize">{asset.type}</td>
                         <td className="py-3">
-                          <span
-                            className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${
-                              asset.criticality === "critical"
-                                ? "bg-red-500/20 text-red-400"
-                                : asset.criticality === "high"
-                                ? "bg-orange-500/20 text-orange-400"
-                                : "bg-blue-500/20 text-blue-400"
-                            }`}
-                          >
+                          <span className="px-2 py-0.5 rounded text-xs font-medium uppercase bg-blue-500/20 text-blue-400">
                             {asset.criticality}
                           </span>
                         </td>
                         <td className="py-3">
-                          <span className="px-2 py-0.5 rounded text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <span className={`px-2 py-0.5 rounded text-xs uppercase ${
+                            asset.status === "vulnerable"
+                              ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                              : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          }`}>
                             {asset.status}
                           </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <button
+                            onClick={() => handleLaunchScan(asset.id, asset.name)}
+                            disabled={scanningId === asset.id}
+                            className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition disabled:opacity-50"
+                          >
+                            <Play className={`w-3 h-3 ${scanningId === asset.id ? "animate-spin" : ""}`} />
+                            {scanningId === asset.id ? "Scan en cours..." : "Lancer le scan"}
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -202,11 +227,11 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Section 2 : Vulnérabilités Récentes */}
+          {/* Section 2 : Vulnérabilités Détectées */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Server className="w-5 h-5 text-red-400" />
-              Vulnérabilités détectées (Findings)
+              Vulnérabilités confirmées ({findings.length})
             </h2>
 
             {findings.length === 0 ? (
@@ -214,20 +239,42 @@ export default function Dashboard() {
                 <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2 opacity-80" />
                 <p>Aucune vulnérabilité active détectée.</p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Les résultats des scans automatisés apparaîtront ici.
+                  Cliquez sur &quot;Lancer le scan&quot; sur un actif pour exécuter les tests de sécurité.
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {findings.map((f) => (
-                  <div key={f.id} className="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+                  <div
+                    key={f.id}
+                    className="p-4 rounded-xl bg-white/[0.02] border border-white/10 hover:border-white/20 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
                     <div>
-                      <div className="font-semibold text-white">{f.title}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{f.cwe || "CWE-Non-classé"}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-white text-base">{f.title}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          f.severity === "critical"
+                            ? "bg-red-500 text-white"
+                            : f.severity === "high"
+                            ? "bg-orange-500 text-white"
+                            : "bg-yellow-500 text-black"
+                        }`}>
+                          {f.priority} - {f.severity}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 font-mono">
+                        {f.cwe} • Endpoint: {f.endpoint}
+                      </div>
+                      {f.remediation && (
+                        <div className="text-xs text-emerald-400 mt-2 bg-emerald-500/5 p-2 rounded border border-emerald-500/10">
+                          <strong>Remédiation :</strong> {f.remediation}
+                        </div>
+                      )}
                     </div>
-                    <span className="px-2 py-1 rounded text-xs font-bold uppercase bg-red-500/20 text-red-400">
-                      {f.severity}
-                    </span>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-xs text-gray-400">Score de risque</div>
+                      <div className="text-xl font-bold text-red-400">{f.risk_score}/100</div>
+                    </div>
                   </div>
                 ))}
               </div>
