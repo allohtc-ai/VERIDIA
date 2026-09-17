@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
-import { Shield, AlertTriangle, CheckCircle2, Activity, Plus, Globe, Server, RefreshCw, Play, ShieldAlert } from "lucide-react";
+import { Shield, AlertTriangle, CheckCircle2, Activity, Plus, Globe, Server, RefreshCw, Play, ShieldAlert, Check } from "lucide-react";
 
 interface Asset {
   id: string;
@@ -17,6 +17,7 @@ interface Asset {
 
 interface Finding {
   id: string;
+  asset_id: string;
   title: string;
   severity: string;
   priority: string;
@@ -25,6 +26,7 @@ interface Finding {
   cwe?: string;
   endpoint?: string;
   remediation?: string;
+  verified: boolean;
 }
 
 export default function Dashboard() {
@@ -32,6 +34,7 @@ export default function Dashboard() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanningId, setScanningId] = useState<string | null>(null);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newAsset, setNewAsset] = useState({ name: "", url: "", type: "web", criticality: "medium" });
   const [adding, setAdding] = useState(false);
@@ -90,16 +93,37 @@ export default function Dashboard() {
       if (res.ok) {
         await loadData();
       } else {
-        alert("Erreur lors du lancement du scan.");
+        alert("Erreur lors du scan.");
       }
     } finally {
       setScanningId(null);
     }
   }
 
-  const criticalCount = findings.filter((f) => f.severity === "critical").length;
-  const highCount = findings.filter((f) => f.severity === "high").length;
-  const mediumCount = findings.filter((f) => f.severity === "medium").length;
+  async function handleVerifyFix(findingId: string, assetId: string) {
+    setVerifyingId(findingId);
+    try {
+      const res = await fetch("/api/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ findingId, assetId }),
+      });
+      if (res.ok) {
+        await loadData();
+      } else {
+        alert("Erreur lors de la vérification.");
+      }
+    } finally {
+      setVerifyingId(null);
+    }
+  }
+
+  const activeFindings = findings.filter((f) => f.status !== "verified");
+  const verifiedFindings = findings.filter((f) => f.status === "verified");
+
+  const criticalCount = activeFindings.filter((f) => f.severity === "critical").length;
+  const highCount = activeFindings.filter((f) => f.severity === "high").length;
+  const mediumCount = activeFindings.filter((f) => f.severity === "medium").length;
 
   return (
     <>
@@ -111,7 +135,7 @@ export default function Dashboard() {
             <div>
               <h1 className="text-3xl font-bold tracking-tight">Tableau de bord de Sécurité</h1>
               <p className="text-gray-400 text-sm mt-1">
-                Données en direct connectées à Supabase
+                Gouvernance, détection et vérification en temps réel
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -144,36 +168,36 @@ export default function Dashboard() {
 
             <div className="bg-white/5 border border-red-500/20 rounded-xl p-5">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Failles Critiques</span>
+                <span className="text-gray-400 text-sm">Failles Ouvertes</span>
                 <AlertTriangle className="w-5 h-5 text-red-400" />
               </div>
-              <div className="text-3xl font-bold">{criticalCount}</div>
+              <div className="text-3xl font-bold text-red-400">{activeFindings.length}</div>
             </div>
 
-            <div className="bg-white/5 border border-orange-500/20 rounded-xl p-5">
+            <div className="bg-white/5 border border-emerald-500/20 rounded-xl p-5">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Failles Hautes</span>
-                <ShieldAlert className="w-5 h-5 text-orange-400" />
+                <span className="text-gray-400 text-sm">Correctifs Vérifiés</span>
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
               </div>
-              <div className="text-3xl font-bold">{highCount}</div>
+              <div className="text-3xl font-bold text-emerald-400">{verifiedFindings.length}</div>
             </div>
 
             <div className="bg-white/5 border border-purple-500/20 rounded-xl p-5">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Score Sécurité</span>
+                <span className="text-gray-400 text-sm">Score de Sécurité</span>
                 <Activity className="w-5 h-5 text-purple-400" />
               </div>
-              <div className="text-3xl font-bold">
-                {findings.length === 0 ? "100%" : `${Math.max(15, 100 - criticalCount * 25 - highCount * 10 - mediumCount * 5)}%`}
+              <div className="text-3xl font-bold text-cyan-400">
+                {activeFindings.length === 0 ? "100%" : `${Math.max(20, 100 - criticalCount * 25 - highCount * 10 - mediumCount * 5)}%`}
               </div>
             </div>
           </div>
 
-          {/* Section 1 : Tableau des Actifs avec Bouton Scanner */}
+          {/* Section 1 : Actifs */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Globe className="w-5 h-5 text-cyan-400" />
-              Vos Actifs & Périmètre d&apos;Évaluation
+              Actifs du périmètre
             </h2>
 
             {assets.length === 0 ? (
@@ -184,7 +208,7 @@ export default function Dashboard() {
                   <thead>
                     <tr className="border-b border-white/10 text-gray-400">
                       <th className="pb-3">Nom</th>
-                      <th className="pb-3">URL / Cible</th>
+                      <th className="pb-3">URL</th>
                       <th className="pb-3">Criticité</th>
                       <th className="pb-3">Statut</th>
                       <th className="pb-3 text-right">Action</th>
@@ -216,7 +240,7 @@ export default function Dashboard() {
                             className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition disabled:opacity-50"
                           >
                             <Play className={`w-3 h-3 ${scanningId === asset.id ? "animate-spin" : ""}`} />
-                            {scanningId === asset.id ? "Scan en cours..." : "Lancer le scan"}
+                            {scanningId === asset.id ? "Scan..." : "Lancer le scan"}
                           </button>
                         </td>
                       </tr>
@@ -227,53 +251,89 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Section 2 : Vulnérabilités Détectées */}
+          {/* Section 2 : Vulnérabilités avec Gestion du Risque Corrigé */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Server className="w-5 h-5 text-red-400" />
-              Vulnérabilités confirmées ({findings.length})
+              Gestion & Preuves de Remédiation ({findings.length})
             </h2>
 
             {findings.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
                 <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2 opacity-80" />
-                <p>Aucune vulnérabilité active détectée.</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Cliquez sur &quot;Lancer le scan&quot; sur un actif pour exécuter les tests de sécurité.
-                </p>
+                <p>Aucune vulnérabilité active.</p>
               </div>
             ) : (
               <div className="space-y-4">
                 {findings.map((f) => (
                   <div
                     key={f.id}
-                    className="p-4 rounded-xl bg-white/[0.02] border border-white/10 hover:border-white/20 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    className={`p-4 rounded-xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                      f.status === "verified"
+                        ? "bg-emerald-500/[0.04] border-emerald-500/30"
+                        : "bg-white/[0.02] border-white/10"
+                    }`}
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-white text-base">{f.title}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`font-semibold text-base ${f.status === "verified" ? "text-gray-300" : "text-white"}`}>
+                          {f.title}
+                        </span>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          f.severity === "critical"
+                          f.status === "verified"
+                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                            : f.severity === "critical"
                             ? "bg-red-500 text-white"
                             : f.severity === "high"
                             ? "bg-orange-500 text-white"
                             : "bg-yellow-500 text-black"
                         }`}>
-                          {f.priority} - {f.severity}
+                          {f.status === "verified" ? "CORRECTIF VÉRIFIÉ" : `${f.priority} - ${f.severity}`}
                         </span>
                       </div>
                       <div className="text-xs text-gray-400 mt-1 font-mono">
                         {f.cwe} • Endpoint: {f.endpoint}
                       </div>
                       {f.remediation && (
-                        <div className="text-xs text-emerald-400 mt-2 bg-emerald-500/5 p-2 rounded border border-emerald-500/10">
+                        <div className={`text-xs mt-2 p-2 rounded border ${
+                          f.status === "verified"
+                            ? "text-gray-400 bg-white/[0.02] border-white/5"
+                            : "text-emerald-400 bg-emerald-500/5 border-emerald-500/10"
+                        }`}>
                           <strong>Remédiation :</strong> {f.remediation}
                         </div>
                       )}
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-xs text-gray-400">Score de risque</div>
-                      <div className="text-xl font-bold text-red-400">{f.risk_score}/100</div>
+
+                    <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 flex-shrink-0">
+                      <div className="text-right">
+                        <div className="text-xs text-gray-400">
+                          {f.status === "verified" ? "Risque initial éliminé" : "Score de Risque Actuel"}
+                        </div>
+                        {f.status === "verified" ? (
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <span className="line-through text-gray-500 text-sm">{f.risk_score}</span>
+                            <span className="text-emerald-400 font-bold text-xl">→ 0/100</span>
+                          </div>
+                        ) : (
+                          <div className="text-xl font-bold text-red-400">{f.risk_score}/100</div>
+                        )}
+                      </div>
+
+                      {f.status !== "verified" ? (
+                        <button
+                          onClick={() => handleVerifyFix(f.id, f.asset_id)}
+                          disabled={verifyingId === f.id}
+                          className="bg-emerald-500 hover:bg-emerald-400 text-black px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50 shadow-md shadow-emerald-500/10"
+                        >
+                          <Check className={`w-3.5 h-3.5 ${verifyingId === f.id ? "animate-spin" : ""}`} />
+                          {verifyingId === f.id ? "Vérification..." : "Vérifier le correctif"}
+                        </button>
+                      ) : (
+                        <span className="text-emerald-400 text-xs font-semibold bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Preuve enregistrée
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
