@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
-import { Shield, AlertTriangle, CheckCircle2, Activity, Plus, Globe, Server, RefreshCw, Play, ShieldAlert, Check } from "lucide-react";
+import { Shield, AlertTriangle, CheckCircle2, Activity, Plus, Globe, Server, RefreshCw, Play, ShieldAlert, Check, FileDown } from "lucide-react";
 
 interface Asset {
   id: string;
@@ -30,11 +30,13 @@ interface Finding {
 }
 
 export default function Dashboard() {
+  const [mounted, setMounted] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanningId, setScanningId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newAsset, setNewAsset] = useState({ name: "", url: "", type: "web", criticality: "medium" });
   const [adding, setAdding] = useState(false);
@@ -58,6 +60,7 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
+    setMounted(true);
     loadData();
   }, []);
 
@@ -118,6 +121,40 @@ export default function Dashboard() {
     }
   }
 
+  async function handleExportReport() {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/report");
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `VERIDIA-Audit-Report-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Erreur lors de l'export du rapport.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  if (!mounted) {
+    return (
+      <>
+        <Navbar />
+        <main className="min-h-screen bg-[#0a0e1a] text-white pt-32 px-4 flex items-center justify-center">
+          <div className="text-center">
+            <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin mx-auto mb-3" />
+            <p className="text-gray-400 text-sm">Chargement du tableau de bord...</p>
+          </div>
+        </main>
+        <Footer />
+      </>
+    );
+  }
+
   const activeFindings = findings.filter((f) => f.status !== "verified");
   const verifiedFindings = findings.filter((f) => f.status === "verified");
 
@@ -135,16 +172,24 @@ export default function Dashboard() {
             <div>
               <h1 className="text-3xl font-bold tracking-tight">Tableau de bord de Sécurité</h1>
               <p className="text-gray-400 text-sm mt-1">
-                Gouvernance, détection et vérification en temps réel
+                Gouvernance, détection et conformité continue
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={loadData}
                 className="p-2.5 rounded-lg border border-white/10 hover:bg-white/5 transition text-gray-300"
                 title="Actualiser"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              </button>
+              <button
+                onClick={handleExportReport}
+                disabled={exporting}
+                className="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 font-semibold px-4 py-2.5 rounded-xl flex items-center gap-2 transition"
+              >
+                <FileDown className={`w-4 h-4 ${exporting ? "animate-bounce" : ""}`} />
+                Rapport d&apos;Audit
               </button>
               <button
                 onClick={() => setShowAddModal(true)}
@@ -251,7 +296,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Section 2 : Vulnérabilités avec Gestion du Risque Corrigé */}
+          {/* Section 2 : Vulnérabilités */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Server className="w-5 h-5 text-red-400" />
